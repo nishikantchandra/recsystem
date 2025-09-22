@@ -1,3 +1,57 @@
+// =====================================================================================
+// Cosine Similarity Helper Functions
+// =====================================================================================
+
+/**
+ * Calculates the dot product of two vectors.
+ * @param {number[]} vecA - The first vector.
+ * @param {number[]} vecB - The second vector.
+ * @returns {number} The dot product.
+ */
+function dotProduct(vecA, vecB) {
+  let product = 0;
+  for (let i = 0; i < vecA.length; i++) {
+    product += vecA[i] * vecB[i];
+  }
+  return product;
+}
+
+/**
+ * Calculates the magnitude (length or norm) of a vector.
+ * @param {number[]} vec - The vector.
+ * @returns {number} The magnitude of the vector.
+ */
+function magnitude(vec) {
+  let sum = 0;
+  for (let i = 0; i < vec.length; i++) {
+    sum += vec[i] * vec[i];
+  }
+  return Math.sqrt(sum);
+}
+
+/**
+ * Calculates the cosine similarity between two vectors.
+ * @param {number[]} vecA - The first vector.
+ * @param {number[]} vecB - The second vector.
+ * @returns {number} The cosine similarity score (between 0 and 1).
+ */
+function cosineSimilarity(vecA, vecB) {
+  const dot = dotProduct(vecA, vecB);
+  const magA = magnitude(vecA);
+  const magB = magnitude(vecB);
+  
+  // To avoid division by zero error
+  if (magA === 0 || magB === 0) {
+    return 0;
+  }
+  
+  return dot / (magA * magB);
+}
+
+// =====================================================================================
+// Application Logic
+// =====================================================================================
+
 // Initialize the application when the window loads
 window.onload = async function() {
     try {
@@ -15,7 +69,7 @@ window.onload = async function() {
         resultElement.className = 'success';
     } catch (error) {
         console.error('Initialization error:', error);
-        // Error message already set in data.js
+        // Error message is handled in data.js
     }
 };
 
@@ -70,24 +124,35 @@ function getRecommendations() {
         // Use setTimeout to allow the UI to update before heavy computation
         setTimeout(() => {
             try {
-                // Step 3: Prepare for similarity calculation
-                const likedGenres = new Set(likedMovie.genres);
+                // =====================================================================
+                // NEW: Cosine Similarity Logic
+                // =====================================================================
+
+                // Step 3: Create a master list of all unique genres
+                const allGenres = [...new Set(movies.flatMap(m => m.genres))];
+
+                /**
+                 * Creates a one-hot encoded vector from a movie's genres.
+                 * @param {string[]} movieGenres - The list of genres for a single movie.
+                 * @param {string[]} allGenresList - The master list of all unique genres.
+                 * @returns {number[]} A binary vector.
+                 */
+                const createGenreVector = (movieGenres, allGenresList) => {
+                    return allGenresList.map(genre => movieGenres.includes(genre) ? 1 : 0);
+                };
+                
+                // Step 4: Create a vector for the liked movie
+                const likedMovieVector = createGenreVector(likedMovie.genres, allGenres);
+                
+                // Step 5: Filter out the liked movie and calculate scores for all other movies
                 const candidateMovies = movies.filter(movie => movie.id !== likedMovie.id);
                 
-                // Step 4: Calculate Jaccard similarity scores
                 const scoredMovies = candidateMovies.map(candidate => {
-                    const candidateGenres = new Set(candidate.genres);
+                    // Create a vector for the candidate movie
+                    const candidateVector = createGenreVector(candidate.genres, allGenres);
                     
-                    // Calculate intersection
-                    const intersection = new Set(
-                        [...likedGenres].filter(genre => candidateGenres.has(genre))
-                    );
-                    
-                    // Calculate union
-                    const union = new Set([...likedGenres, ...candidateGenres]);
-                    
-                    // Calculate Jaccard similarity
-                    const score = union.size > 0 ? intersection.size / union.size : 0;
+                    // Calculate cosine similarity score
+                    const score = cosineSimilarity(likedMovieVector, candidateVector);
                     
                     return {
                         ...candidate,
@@ -95,19 +160,23 @@ function getRecommendations() {
                     };
                 });
                 
-                // Step 5: Sort by score in descending order
+                // =====================================================================
+                // End of New Logic
+                // =====================================================================
+                
+                // Step 6: Sort by score in descending order
                 scoredMovies.sort((a, b) => b.score - a.score);
                 
-                // Step 6: Select top recommendations
-                const topRecommendations = scoredMovies.slice(0, 2);
+                // Step 7: Select top recommendations (we'll take 3 this time)
+                const topRecommendations = scoredMovies.slice(0, 3);
                 
-                // Step 7: Display results
-                if (topRecommendations.length > 0) {
+                // Step 8: Display results
+                if (topRecommendations.length > 0 && topRecommendations[0].score > 0) {
                     const recommendationTitles = topRecommendations.map(movie => movie.title);
                     resultElement.textContent = `Because you liked "${likedMovie.title}", we recommend: ${recommendationTitles.join(', ')}`;
                     resultElement.className = 'success';
                 } else {
-                    resultElement.textContent = `No recommendations found for "${likedMovie.title}".`;
+                    resultElement.textContent = `Sorry, no strong recommendations found for "${likedMovie.title}".`;
                     resultElement.className = 'error';
                 }
             } catch (error) {
